@@ -14,7 +14,7 @@
 
 'use strict';
 
-const Metadata = require('./metadata');
+const TemplateMetadata = require('./templatemetadata');
 const Logger = require('@accordproject/concerto-core').Logger;
 const ParserManager = require('@accordproject/markdown-template').ParserManager;
 const crypto = require('crypto');
@@ -23,6 +23,7 @@ const stringify = require('json-stable-stringify');
 const LogicManager = require('@accordproject/ergo-compiler').LogicManager;
 const TemplateLoader = require('./templateloader');
 const TemplateSaver = require('./templatesaver');
+const Util = require('./util');
 
 /**
  * A template for a legal clause or contract. A Template has a template model, request/response transaction types,
@@ -47,7 +48,7 @@ class Template {
      * @param {Object} authorSignature  - object containing template hash, timestamp, author's certificate, signature
      */
     constructor(packageJson, readme, samples, request, logo, options, authorSignature) {
-        this.metadata = new Metadata(packageJson, readme, samples, request, logo);
+        this.metadata = new TemplateMetadata(packageJson, readme, samples, request, logo);
         this.logicManager = new LogicManager('es6', null, options);
         const templateKind = this.getMetadata().getTemplateType() !== 0 ? 'clause' : 'contract';
         this.parserManager = new ParserManager(this.getModelManager(),null,templateKind);
@@ -79,23 +80,7 @@ class Template {
      * @returns {ClassDeclaration} the template model for the template
      */
     getTemplateModel() {
-
-        let modelType = 'org.accordproject.contract.Contract';
-
-        if(this.getMetadata().getTemplateType() !== 0) {
-            modelType = 'org.accordproject.contract.Clause';
-        }
-        const templateModels = this.getIntrospector().getClassDeclarations().filter((item) => {
-            return !item.isAbstract() && Template.instanceOf(item,modelType);
-        });
-
-        if (templateModels.length > 1) {
-            throw new Error(`Found multiple instances of ${modelType} in ${this.metadata.getName()}. The model for the template must contain a single asset that extends ${modelType}.`);
-        } else if (templateModels.length === 0) {
-            throw new Error(`Failed to find an asset that extends ${modelType} in ${this.metadata.getName()}. The model for the template must contain a single asset that extends ${modelType}.`);
-        } else {
-            return templateModels[0];
-        }
+        return Util.getContractModel(this.logicManager, this.getMetadata().getTemplateType());
     }
 
     /**
@@ -108,7 +93,7 @@ class Template {
 
     /**
      * Returns the metadata for this template
-     * @return {Metadata} the metadata for this template
+     * @return {TemplateMetadata} the metadata for this template
      */
     getMetadata() {
         return this.metadata;
@@ -138,7 +123,6 @@ class Template {
     getVersion() {
         return this.getMetadata().getVersion();
     }
-
 
     /**
      * Returns the description for this template
@@ -326,15 +310,6 @@ class Template {
     }
 
     /**
-     * Provides access to the Introspector for this template. The Introspector
-     * is used to reflect on the types defined within this template.
-     * @return {Introspector} the Introspector for this template
-     */
-    getIntrospector() {
-        return this.logicManager.getIntrospector();
-    }
-
-    /**
      * Provides access to the Factory for this template. The Factory
      * is used to create the types defined in this template.
      * @return {Factory} the Factory for this template
@@ -378,11 +353,11 @@ class Template {
      * @private
      */
     setSamples(samples) {
-        this.metadata = new Metadata(this.metadata.getPackageJson(), this.metadata.getREADME(), samples, this.metadata.getRequest(), this.metadata.getLogo());
+        this.metadata = new TemplateMetadata(this.metadata.getPackageJson(), this.metadata.getREADME(), samples, this.metadata.getRequest(), this.metadata.getLogo());
     }
 
     /**
-     * Set a locale-specified sample within the Metadata
+     * Set a locale-specified sample within the TemplateMetadata
      * @param {object} sample the samples for the template
      * @param {string} locale the IETF Language Tag (BCP 47) for the language
      * @private
@@ -390,34 +365,34 @@ class Template {
     setSample(sample, locale) {
         const samples = this.metadata.getSamples();
         samples[locale] = sample;
-        this.metadata = new Metadata(this.metadata.getPackageJson(), this.metadata.getREADME(), samples, this.metadata.getRequest(), this.metadata.getLogo());
+        this.metadata = new TemplateMetadata(this.metadata.getPackageJson(), this.metadata.getREADME(), samples, this.metadata.getRequest(), this.metadata.getLogo());
     }
 
     /**
-     * Set the request within the Metadata
+     * Set the request within the TemplateMetadata
      * @param {object} request the samples for the template
      * @private
      */
     setRequest(request) {
-        this.metadata = new Metadata(this.metadata.getPackageJson(), this.metadata.getREADME(), this.metadata.getSamples(), request, this.metadata.getLogo());
+        this.metadata = new TemplateMetadata(this.metadata.getPackageJson(), this.metadata.getREADME(), this.metadata.getSamples(), request, this.metadata.getLogo());
     }
 
     /**
-     * Set the readme file within the Metadata
+     * Set the readme file within the TemplateMetadata
      * @param {String} readme the readme in markdown for the template
      * @private
      */
     setReadme(readme) {
-        this.metadata = new Metadata(this.metadata.getPackageJson(), readme, this.metadata.getSamples(), this.metadata.getRequest());
+        this.metadata = new TemplateMetadata(this.metadata.getPackageJson(), readme, this.metadata.getSamples(), this.metadata.getRequest());
     }
 
     /**
-     * Set the packageJson within the Metadata
+     * Set the packageJson within the TemplateMetadata
      * @param {object} packageJson the JS object for package.json
      * @private
      */
     setPackageJson(packageJson) {
-        this.metadata = new Metadata(packageJson, this.metadata.getREADME(), this.metadata.getSamples(), this.metadata.getRequest(), this.metadata.getLogo());
+        this.metadata = new TemplateMetadata(packageJson, this.metadata.getREADME(), this.metadata.getSamples(), this.metadata.getRequest(), this.metadata.getLogo());
     }
 
     /**
@@ -483,30 +458,6 @@ class Template {
         return this.getScriptManager().getAllScripts().length > 0;
     }
 
-    /**
-     * Check to see if a ClassDeclaration is an instance of the specified fully qualified
-     * type name.
-     * @internal
-     * @param {ClassDeclaration} classDeclaration The class to test
-     * @param {String} fqt The fully qualified type name.
-     * @returns {boolean} True if classDeclaration an instance of the specified fully
-     * qualified type name, false otherwise.
-     */
-    static instanceOf(classDeclaration, fqt) {
-        // Check to see if this is an exact instance of the specified type.
-        if (classDeclaration.getFullyQualifiedName() === fqt) {
-            return true;
-        }
-        // Now walk the class hierachy looking to see if it's an instance of the specified type.
-        let superTypeDeclaration = classDeclaration.getSuperTypeDeclaration();
-        while (superTypeDeclaration) {
-            if (superTypeDeclaration.getFullyQualifiedName() === fqt) {
-                return true;
-            }
-            superTypeDeclaration = superTypeDeclaration.getSuperTypeDeclaration();
-        }
-        return false;
-    }
 }
 
 module.exports = Template;

@@ -15,9 +15,8 @@
 'use strict';
 
 const Template = require('../lib/template');
-const TemplateInstance = require('../lib/templateinstance');
 const TemplateLoader = require('../lib/templateloader');
-const Clause = require('../lib/clause');
+const ClauseInstance = require('../lib/clauseinstance');
 
 const chai = require('chai');
 const fs = require('fs');
@@ -60,7 +59,7 @@ const copyrightSample = fs.readFileSync(path.resolve(__dirname, 'data/copyright-
 const copyrightSlate = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'data/copyright-license', 'slate.json'), 'utf8'));
 const copyrightCiceroMarkParsed = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'data/copyright-license', 'ciceromark_parsed.json'), 'utf8'));
 
-describe('Clause', () => {
+describe('ClauseInstance', () => {
 
     const testLatePenaltyInput = fs.readFileSync(path.resolve(__dirname, 'data/latedeliveryandpenalty', 'text/sample.md'), 'utf8');
     const testLatePenaltyInputNoForce = fs.readFileSync(path.resolve(__dirname, 'data/latedeliveryandpenalty', 'text/sample-noforce.md'), 'utf8');
@@ -77,14 +76,14 @@ describe('Clause', () => {
 
         it('should create a clause for a latedeliveryandpenalty template', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.should.not.be.null;
             clause.getLogicManager().should.not.be.null;
         });
 
         it('should create a clause for a conga template', async function() {
             const template = await Template.fromDirectory('./test/data/conga', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.should.not.be.null;
         });
 
@@ -114,10 +113,9 @@ describe('Clause', () => {
     });
 
     describe('#setData', () => {
-
         it('should be able to set data', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
 
             // check that we can set/get a valid template model
             const data = {
@@ -146,7 +144,7 @@ describe('Clause', () => {
         });
         it('should throw error for bad $class', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = {
                 $class: 'bad.class.name'
             };
@@ -158,7 +156,7 @@ describe('Clause', () => {
 
         it('should get a JSON representation of a clause', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = {
                 $class: 'io.clause.latedeliveryandpenalty.TemplateModel',
                 clauseId: 'c0884078-882d-42e0-87d6-4cc824b4f194',
@@ -189,7 +187,7 @@ describe('Clause', () => {
 
         it('should be able to set the data from latedeliveryandpenalty natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyInput);
             const data = {
                 $class: 'io.clause.latedeliveryandpenalty.TemplateModel',
@@ -217,7 +215,7 @@ describe('Clause', () => {
 
         it('should be able to set the data from latedeliveryandpenalty natural language text (with CR)', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty-cr', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyCrInput);
             const data = {
                 $class: 'io.clause.latedeliveryandpenalty.TemplateModel',
@@ -245,7 +243,7 @@ describe('Clause', () => {
 
         it('should be able to set the data from latedeliveryandpenalty natural language text (with a Period)', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty-period', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyPeriodInput);
             const data = {
                 $class: 'org.accordproject.simplelatedeliveryandpenalty.SimpleLateDeliveryAndPenaltyContract',
@@ -273,7 +271,7 @@ describe('Clause', () => {
 
         it('should be able to set the data from conga natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/conga', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testCongaInput);
             const data = {
                 $class: 'org.accordproject.conga.TemplateModel',
@@ -290,19 +288,19 @@ describe('Clause', () => {
 
         it('should throw an error for empty text', async function() {
             const template = await Template.fromDirectory('./test/data/conga', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             (()=> clause.parse('')).should.throw('Parse error at line 1 column 1');
         });
 
         it('should throw an error for non-matching text', async function() {
             const template = await Template.fromDirectory('./test/data/conga', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             (()=> clause.parse(testCongaErr)).should.throw('Parse error at line 1 column 13');
         });
 
         it('should be able to set the data for a text-only clause', async function() {
             const template = await Template.fromDirectory('./test/data/text-only', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testTextOnlyInput);
             const data = {
                 $class: 'io.clause.latedeliveryandpenalty.TemplateModel',
@@ -337,7 +335,7 @@ describe('Clause', () => {
 
         it('should be able to parse an if-else block (true)', async function() {
             const template = await Template.fromDirectory('./test/data/block-ifelse', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse('I\'m active');
             const data = {
                 '$class': 'org.accordproject.volumediscountlist.VolumeDiscountContract',
@@ -351,7 +349,7 @@ describe('Clause', () => {
 
         it('should be able to parse an if-else block (false)', async function() {
             const template = await Template.fromDirectory('./test/data/block-ifelse', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse('I\'m inactive');
             const data = {
                 '$class': 'org.accordproject.volumediscountlist.VolumeDiscountContract',
@@ -365,7 +363,7 @@ describe('Clause', () => {
 
         it('should not be able to parse an if-else block if the text is neither options', async function() {
             const template = await Template.fromDirectory('./test/data/block-ifelse', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             (()=> clause.parse('I\'m not active')).should.throw(`Parse error at line 1 column 1
 I'm not active
 ^^^^^^^^^^^^
@@ -382,7 +380,7 @@ Expected: 'I'm active' or 'I'm inactive'`);
 
         it('should be able to parse an olist block', async function() {
             const template = await Template.fromDirectory('./test/data/block-olist', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(`This is a list
 1. 0.0$ million <= Volume < 1.0$ million : 3.1%
 2. 1.0$ million <= Volume < 10.0$ million : 3.1%
@@ -421,7 +419,7 @@ This is more text
 
         it('should be able to draft an olist block', async function() {
             const template = await Template.fromDirectory('./test/data/block-olist', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const text = `This is a list
 1. 0.0$ million <= Volume < 1.0$ million : 3.1%
 2. 1.0$ million <= Volume < 10.0$ million : 3.1%
@@ -459,7 +457,7 @@ This is more text`;
 
         it('should be able to draft a copyright license', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = copyrightData;
             clause.setData(data);
             const newText = clause.draft();
@@ -468,7 +466,7 @@ This is more text`;
 
         it('should be able to draft a copyright license (unquote variables)', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const text = `Copyright License Agreement
 
 This COPYRIGHT LICENSE AGREEMENT (the "Agreement"), dated as of 01/01/2018 (the "Effective Date"), is made by and between Me ("Licensee"), a NY Company with offices located at 1 Broadway, and Myself ("Licensor"), a NY Company with offices located at 2 Broadway.
@@ -532,7 +530,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should be able to draft a copyright license (html)', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const text = `<html>
 <body>
 <div class="document">
@@ -563,7 +561,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should be able to draft a copyright license (markdown_cicero)', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = copyrightData;
             clause.setData(data);
             const newText = clause.draft({format:'markdown_cicero'});
@@ -572,7 +570,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should be able to draft a copyright license (slate)', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = copyrightData;
             clause.setData(data);
             const newText = clause.draft({format:'slate'});
@@ -581,7 +579,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should be able to draft a copyright license (ciceromark_parsed)', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = copyrightData;
             clause.setData(data);
             const newText = clause.draft({format:'ciceromark_parsed'});
@@ -590,7 +588,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should throw when drafting to an unknown format', async function() {
             const template = await Template.fromDirectory('./test/data/copyright-license', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const data = {
                 '$class': 'org.accordproject.copyrightlicense.CopyrightLicenseContract',
                 'contractId': 'e32a2ca7-78c9-4462-935f-487aad6e9c9b',
@@ -624,7 +622,7 @@ Assignment. Licensee may freely assign or otherwise transfer all or any of its r
 
         it('should be able to parse an ulist block', async function() {
             const template = await Template.fromDirectory('./test/data/block-ulist', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const text = `This is a list
 - 0.0$ million <= Volume < 1.0$ million : 3.1%
 - 1.0$ million <= Volume < 10.0$ million : 3.1%
@@ -663,7 +661,7 @@ This is more text`;
 
         it('should be able to draft an ulist block', async function() {
             const template = await Template.fromDirectory('./test/data/block-ulist', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const text = `This is a list
 -  0.0$ million <= Volume < 1.0$ million : 3.1%
 -  1.0$ million <= Volume < 10.0$ million : 3.1%
@@ -701,7 +699,7 @@ This is more text`;
 
         it('should be able to parse a join block', async function() {
             const template = await Template.fromDirectory('./test/data/block-join', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse('This is a list: 3.1%, 3.3%, 2.9% (And more Text)');
             const data = {
                 '$class': 'org.accordproject.volumediscountlist.VolumeDiscountContract',
@@ -728,7 +726,7 @@ This is more text`;
 
         it('should be able to parse an ergo expressions', async function() {
             const template = await Template.fromDirectory('./test/data/block-ergo', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse('This is a list: 3.1%, 3.3%, 2.9% (Average: {{%Some text%}})');
             const data = {
                 '$class': 'org.accordproject.volumediscountlist.VolumeDiscountContract',
@@ -759,7 +757,7 @@ This is more text`;
 
         it('should be able to draft with interest rates formula', async function() {
             const template = await Template.fromDirectory('./test/data/fixed-interests', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(`## Fixed rate loan
 
 This is a _fixed interest_ loan to the amount of £100,000.00
@@ -783,7 +781,7 @@ and monthly payments of {{%"£667.00"%}}`));
 
         it('should be able to roundtrip latedelivery natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyInput);
             const nl = clause.draft();
             nl.should.equal(TemplateLoader.normalizeText(testLatePenaltyInput));
@@ -791,7 +789,7 @@ and monthly payments of {{%"£667.00"%}}`));
 
         it('should be able to generate natural language text (conditional true)', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyInput);
             const nl = clause.draft();
             nl.should.equal(`Late Delivery and Penalty
@@ -805,7 +803,7 @@ In case of delayed delivery except for Force Majeure cases, the Seller shall pay
 
         it('should be able to generate natural language text (conditional false)', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyInputNoForce);
             const nl = clause.draft();
             nl.should.equal(`Late Delivery and Penalty
@@ -819,7 +817,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to generate natural language text (formatted dates)', async function() {
             const template = await Template.fromDirectory('./test/data/formatted-dates-DD_MM_YYYY', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse('dateTimeProperty: 01/12/2018');
             const nl = clause.draft();
             nl.should.equal('dateTimeProperty: 01/12/2018');
@@ -827,7 +825,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to roundtrip latedelivery natural language text (with a Period)', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty-period', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testLatePenaltyPeriodInput);
             const nl = clause.draft();
             nl.should.equal(TemplateLoader.normalizeText(testLatePenaltyPeriodInput));
@@ -835,7 +833,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to roundtrip conga natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/conga', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testCongaInput);
             const nl = clause.draft();
             nl.should.equal(TemplateLoader.normalizeText(testCongaInput));
@@ -843,7 +841,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to roundtrip alltypes natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/alltypes', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testAllTypesInput);
             const nl = clause.draft();
             nl.should.equal(TemplateLoader.normalizeText(testAllTypesInput));
@@ -851,7 +849,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to roundtrip allblocks natural language text', async function() {
             const template = await Template.fromDirectory('./test/data/allblocks', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             clause.parse(testAllBlocksInput);
             const nl = clause.draft();
             nl.should.equal(TemplateLoader.normalizeText(testAllBlocksInput));
@@ -859,7 +857,7 @@ In case of delayed delivery the Seller shall pay to the Buyer for every 9 days o
 
         it('should be able to update the template grammar and draft', async function() {
             const template = await Template.fromDirectory('./test/data/latedeliveryandpenalty', options);
-            const clause = new Clause(template);
+            const clause = ClauseInstance.fromTemplate(template);
             const newGrammar = `Late Delivery and Penalty
 ====
 In case of delayed delivery{{#if forceMajeure}} except for Force Majeure cases,{{/if}} the Seller shall pay to the Buyer for every {{penaltyDuration}} of delay penalty amounting to {{penaltyPercentage}}% of the total value of the Equipment whose delivery has been delayed. 
@@ -870,11 +868,7 @@ In case of delayed delivery{{#if forceMajeure}} except for Force Majeure cases,{
 
 Adding all precentages in this clause yields: {{% capPercentage + penaltyPercentage %}}.`;
             // Update the grammar
-            TemplateInstance.rebuildParser(
-                clause.getTemplate().getParserManager(),
-                clause.getTemplate().getLogicManager(),
-                clause.getEngine(),
-                clause.getIdentifier(),
+            clause.rebuildParser(
                 newGrammar,
             );
             // Parse again

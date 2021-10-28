@@ -16,8 +16,10 @@
 
 const Logger = require('@accordproject/concerto-core').Logger;
 const Template = require('@accordproject/cicero-core').Template;
-const Clause = require('@accordproject/cicero-core').Clause;
+const ClauseInstance = require('@accordproject/cicero-core').ClauseInstance;
+const ContractInstance = require('@accordproject/cicero-core').ContractInstance;
 const Engine = require('@accordproject/cicero-engine').Engine;
+const Export = require('@accordproject/cicero-transform').Export;
 const CodeGen = require('@accordproject/cicero-tools').CodeGen;
 const FileWriter = CodeGen.FileWriter;
 const fs = require('fs');
@@ -41,12 +43,12 @@ const defaultState = 'state.json';
  */
 class Commands {
     /**
-     * Whether the template path is to a file (template archive)
-     * @param {string} templatePath - path to the template directory or archive
+     * Whether the path is to a file (archive) or a directory
+     * @param {string} path - file system path
      * @return {boolean} true if the path is to a file, false otherwise
      */
-    static isTemplateArchive(templatePath) {
-        return fs.lstatSync(templatePath).isFile();
+    static isArchive(path) {
+        return fs.lstatSync(path).isFile();
     }
 
     /**
@@ -55,13 +57,50 @@ class Commands {
      * @param {Object} [options] - an optional set of options
      * @return {Promise<Template>} a Promise to the instantiated template
      */
-    static loadTemplate(templatePath, options) {
-        if (Commands.isTemplateArchive(templatePath)) {
+    static async loadTemplate(templatePath, options) {
+        if (Commands.isArchive(templatePath)) {
             const buffer = fs.readFileSync(templatePath);
             return Template.fromArchive(buffer, options);
         } else {
             return Template.fromDirectory(templatePath, options);
         }
+    }
+
+    /**
+     * Return a promise to an instance from either a directory or an archive file
+     * @param {string} templatePath - path to the template directory or archive
+     * @param {string} slcPath - path to the smart legal contract archive
+     * @param {string} [samplePath] - path to a sample text
+     * @param {string} [dataPath] - path to a sample data
+     * @param {string} [currentTime] - the definition of 'now', defaults to current time
+     * @param {number} [utcOffset] - UTC Offset for this execution, defaults to local offset
+     * @param {Object} [options] - an optional set of options
+     * @return {Promise<Instance>} a Promise to the instantiated template
+     */
+    static async loadInstance(templatePath, slcPath, samplePath, dataPath, currentTime, utcOffset, options) {
+        if (slcPath) {
+            const buffer = fs.readFileSync(slcPath);
+            return await ContractInstance.fromArchive(buffer, options);
+        }
+        let template;
+        if (Commands.isArchive(templatePath)) {
+            const buffer = fs.readFileSync(templatePath);
+            template = await Template.fromArchive(buffer, options);
+        } else {
+            template = await Template.fromDirectory(templatePath, options);
+        }
+
+        // Initialize clause
+        const clause = ClauseInstance.fromTemplate(template);
+
+        // Wether to use a sample or data
+        if (samplePath) {
+            clause.parse(fs.readFileSync(samplePath, 'utf8'), currentTime, utcOffset);
+        } else {
+            clause.setData(JSON.parse(fs.readFileSync(dataPath, 'utf8')));
+        }
+
+        return clause;
     }
 
     /**
@@ -76,14 +115,18 @@ class Commands {
             argv.template = argv._[1];
         }
 
-        if(!argv.template){
+        if(!argv.template && !argv.contract){
             Logger.info('Using current directory as template folder');
             argv.template = '.';
         }
 
-        argv.template = path.resolve(argv.template);
-
-        if (!Commands.isTemplateArchive(argv.template)) {
+        if (argv.template) {
+            argv.template = path.resolve(argv.template);
+        }
+        if (argv.contract) {
+            argv.contract = path.resolve(argv.contract);
+        }
+        if (argv.template && !Commands.isArchive(argv.template)) {
             const packageJsonExists = fs.existsSync(path.resolve(argv.template,'package.json'));
             let isAPTemplate = false;
             if(packageJsonExists){
@@ -201,7 +244,7 @@ class Commands {
 
         return Commands.loadTemplate(templatePath, options)
             .then((template) => {
-                clause = new Clause(template);
+                clause = ClauseInstance.fromTemplate(template);
                 clause.parse(sampleText, currentTime, utcOffset, samplePath);
                 if (outputPath) {
                     Logger.info('Creating file: ' + outputPath);
@@ -248,7 +291,7 @@ class Commands {
 
         return Commands.loadTemplate(templatePath, options)
             .then(async function (template) {
-                clause = new Clause(template);
+                clause = ClauseInstance.fromTemplate(template);
                 clause.setData(dataJson);
                 const drafted = clause.draft(options, currentTime, utcOffset);
                 if (outputPath) {
@@ -306,7 +349,7 @@ class Commands {
 
         return Commands.loadTemplate(templatePath, options)
             .then(async function (template) {
-                clause = new Clause(template);
+                clause = ClauseInstance.fromTemplate(template);
                 clause.parse(sampleText, currentTime, utcOffset, samplePath);
                 if (outputPath) {
                     Logger.info('Creating file: ' + outputPath);
@@ -332,7 +375,9 @@ class Commands {
      */
     static validateTriggerArgs(argv) {
         argv = Commands.validateCommonArgs(argv);
-        argv = Commands.validateDataArgs(argv);
+        if (argv.template) {
+            argv = Commands.validateDataArgs(argv);
+        }
         argv = Commands.setDefaultFileArg(argv, 'request', 'request.json', ((argv, argDefaultName) => { return [path.resolve(argv.template,argDefaultName)]; }));
 
         if (argv.verbose) {
@@ -354,6 +399,7 @@ class Commands {
      * Trigger a sample text or data json using a template
      *
      * @param {string} templatePath - path to the template directory or archive
+     * @param {string} slcPath - path to the smart legal contract archive
      * @param {string} samplePath - to the sample file
      * @param {string} dataPath - to the data file
      * @param {string[]} requestsPath - to the array of request files
@@ -363,17 +409,7 @@ class Commands {
      * @param {Object} [options] - an optional set of options
      * @returns {object} Promise to the result of execution
      */
-    static trigger(templatePath, samplePath, dataPath, requestsPath, statePath, currentTime, utcOffset, options) {
-        let clause;
-        let sampleText;
-        let dataJson;
-
-        if (samplePath) {
-            sampleText = fs.readFileSync(samplePath, 'utf8');
-        } else {
-            dataJson = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-        }
-
+    static trigger(templatePath, slcPath, samplePath, dataPath, requestsPath, statePath, currentTime, utcOffset, options) {
         let requestsJson = [];
 
         for (let i = 0; i < requestsPath.length; i++) {
@@ -381,20 +417,12 @@ class Commands {
         }
 
         const engine = new Engine();
-        return Commands.loadTemplate(templatePath, options)
-            .then(async (template) => {
-                // Initialize clause
-                clause = new Clause(template);
-                if (sampleText) {
-                    clause.parse(sampleText, currentTime, utcOffset);
-                } else {
-                    clause.setData(dataJson);
-                }
-
+        return Commands.loadInstance(templatePath, slcPath, samplePath, dataPath, currentTime, utcOffset, options)
+            .then(async (instance) => {
                 let stateJson;
                 if(!fs.existsSync(statePath)) {
                     Logger.warn('A state file was not provided, initializing state. Try the --state flag or create a state.json in the root folder of your template.');
-                    const initResult = await engine.init(clause, currentTime, utcOffset);
+                    const initResult = await engine.init(instance, currentTime, utcOffset);
                     stateJson = initResult.state;
                 } else {
                     stateJson = JSON.parse(fs.readFileSync(statePath, 'utf8'));
@@ -402,12 +430,12 @@ class Commands {
 
                 // First execution to get the initial response
                 const firstRequest = requestsJson[0];
-                const initResponse = engine.trigger(clause, firstRequest, stateJson, currentTime, utcOffset);
+                const initResponse = engine.trigger(instance, firstRequest, stateJson, currentTime, utcOffset);
                 // Get all the other requests and chain execution through Promise.reduce()
                 const otherRequests = requestsJson.slice(1, requestsJson.length);
                 return otherRequests.reduce((promise,requestJson) => {
                     return promise.then((result) => {
-                        return engine.trigger(clause, requestJson, result.state, currentTime, utcOffset);
+                        return engine.trigger(instance, requestJson, result.state, currentTime, utcOffset);
                     });
                 }, initResponse);
             })
@@ -424,12 +452,13 @@ class Commands {
      */
     static validateInvokeArgs(argv) {
         argv = Commands.validateCommonArgs(argv);
-        argv = Commands.validateDataArgs(argv);
+        if (argv.template) {
+            argv = Commands.validateDataArgs(argv);
+        }
 
         if (!argv.clauseName) {
             throw new Error('No clause name provided. Try the --clauseName flag to provide a clause to be invoked.');
         }
-
         if (argv.params) {
             if (!fs.existsSync(argv.params)) {
                 throw new Error(`A params file was specified as "${argv.params}" but does not exist at this location.`);
@@ -467,6 +496,7 @@ class Commands {
      * Invoke a sample text using a template
      *
      * @param {string} templatePath - path to the template directory or archive
+     * @param {string} slcPath - path to the smart legal contract archive
      * @param {string} samplePath - to the sample file
      * @param {string} dataPath - to the data file
      * @param {string} clauseName the name of the clause to invoke
@@ -477,40 +507,22 @@ class Commands {
      * @param {Object} [options] - an optional set of options
      * @returns {object} Promise to the result of execution
      */
-    static invoke(templatePath, samplePath, dataPath, clauseName, paramsPath, statePath, currentTime, utcOffset, options) {
-        let clause;
-        let sampleText;
-        let dataJson;
-
-        if (samplePath) {
-            sampleText = fs.readFileSync(samplePath, 'utf8');
-        } else {
-            dataJson = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-        }
-
+    static invoke(templatePath, slcPath, samplePath, dataPath, clauseName, paramsPath, statePath, currentTime, utcOffset, options) {
         const paramsJson = JSON.parse(fs.readFileSync(paramsPath, 'utf8'));
 
         const engine = new Engine();
-        return Commands.loadTemplate(templatePath, options)
-            .then(async (template) => {
-                // Initialize clause
-                clause = new Clause(template);
-                if (sampleText) {
-                    clause.parse(sampleText, currentTime, utcOffset);
-                } else {
-                    clause.setData(dataJson);
-                }
-
+        return Commands.loadInstance(templatePath, slcPath, samplePath, dataPath, currentTime, utcOffset, options)
+            .then(async (instance) => {
                 let stateJson;
                 if(!fs.existsSync(statePath)) {
                     Logger.warn('A state file was not provided, initializing state. Try the --state flag or create a state.json in the root folder of your template.');
-                    const initResult = await engine.init(clause, currentTime, utcOffset);
+                    const initResult = await engine.init(instance, currentTime, utcOffset);
                     stateJson = initResult.state;
                 } else {
                     stateJson = JSON.parse(fs.readFileSync(statePath, 'utf8'));
                 }
 
-                return engine.invoke(clause, clauseName, paramsJson, stateJson, currentTime, utcOffset);
+                return engine.invoke(instance, clauseName, paramsJson, stateJson, currentTime, utcOffset);
             })
             .catch((err) => {
                 Logger.error(err.message);
@@ -525,7 +537,9 @@ class Commands {
      */
     static validateInitializeArgs(argv) {
         argv = Commands.validateCommonArgs(argv);
-        argv = Commands.validateDataArgs(argv);
+        if (argv.template) {
+            argv = Commands.validateDataArgs(argv);
+        }
 
         if(argv.verbose) {
             if (argv.sample) {
@@ -546,6 +560,7 @@ class Commands {
      * Initializes a sample text using a template
      *
      * @param {string} templatePath - path to the template directory or archive
+     * @param {string} slcPath - path to the smart legal contract archive
      * @param {string} samplePath - to the sample file
      * @param {string} dataPath - to the data file
      * @param {object} paramsPath - the parameters for the initialization
@@ -554,31 +569,13 @@ class Commands {
      * @param {Object} [options] - an optional set of options
      * @returns {object} Promise to the result of execution
      */
-    static initialize(templatePath, samplePath, dataPath, paramsPath, currentTime, utcOffset, options) {
-        let clause;
-        let sampleText;
-        let dataJson;
-
-        if (samplePath) {
-            sampleText = fs.readFileSync(samplePath, 'utf8');
-        } else {
-            dataJson = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
-        }
-
+    static initialize(templatePath, slcPath, samplePath, dataPath, paramsPath, currentTime, utcOffset, options) {
         const paramsJson = paramsPath ? JSON.parse(fs.readFileSync(paramsPath, 'utf8')) : {};
 
         const engine = new Engine();
-        return Commands.loadTemplate(templatePath, options)
-            .then((template) => {
-                // Initialize clause
-                clause = new Clause(template);
-                if (sampleText) {
-                    clause.parse(sampleText, currentTime, utcOffset);
-                } else {
-                    clause.setData(dataJson);
-                }
-
-                return engine.init(clause, currentTime, utcOffset, paramsJson);
+        return Commands.loadInstance(templatePath, slcPath, samplePath, dataPath, currentTime, utcOffset, options)
+            .then(async (instance) => {
+                return engine.init(instance, currentTime, utcOffset, paramsJson);
             })
             .catch((err) => {
                 Logger.error(err.message);
@@ -606,7 +603,7 @@ class Commands {
      * Create an archive using a template
      *
      * @param {string} templatePath - path to the template directory or archive
-     * @param {string} target - target language for the archive (should be either 'ergo' or 'cicero')
+     * @param {string} target - target language for the archive (should be either 'ergo' or 'es6')
      * @param {string} outputPath - to the archive file
      * @param {Object} [options] - an optional set of options
      * @returns {object} Promise to the code creating an archive
@@ -640,6 +637,61 @@ class Commands {
     }
 
     /**
+     * Set default params before we create an archive using a template
+     *
+     * @param {object} argv the inbound argument values object
+     * @returns {object} a modfied argument object
+     */
+    static validateSignArgs(argv) {
+        argv = Commands.validateCommonArgs(argv);
+
+        if (!argv.keystore) {
+            throw new Error('Please define path of the keystore using --keystore');
+        }
+        if (!argv.passphrase) {
+            throw new Error('Please define the passphrase of the keystore using --pasphrase');
+        }
+        if (!argv.signatory) {
+            throw new Error('Please define the signatory signing the contract using --signatory');
+        }
+        if(argv.verbose) {
+            Logger.info(`Verifying signatures of contract ${argv.contract}`);
+        }
+
+        return argv;
+    }
+
+    /**
+     * Sign a contract instance
+     *
+     * @param {string} slcPath - path to the slc archive
+     * @param {string} keystore - path to the keystore
+     * @param {string} passphrase - passphrase of the keystore
+     * @param {string} signatory - name of the person/party signing the contract
+     * @param {string} outputPath - to the archive file
+     * @param {Object} [options] - an optional set of options
+     * @returns {object} Promise to the code creating an archive
+     */
+    static async sign(slcPath, keystore, passphrase, signatory, outputPath, options) {
+        return Commands.loadInstance(null, slcPath, options)
+            .then(async (instance) => {
+                const p12File = fs.readFileSync(keystore, { encoding: 'base64' });
+                const archive = await instance.signContract(p12File, passphrase, signatory);
+                let file;
+                if (outputPath) {
+                    file = outputPath;
+                }
+                else {
+                    const instanceName = instance.getIdentifier();
+                    file = `${instanceName}.slc`;
+                }
+                Logger.info('Creating archive: ' + file);
+                fs.writeFileSync(file, archive);
+                return true;
+            });
+    }
+
+    /**
      * Set default params before we verify signatures of template author/developer
      *
      * @param {object} argv the inbound argument values object
@@ -651,17 +703,74 @@ class Commands {
     }
 
     /**
-     * Verify the template developer/author's signatures
+     * Verify signatures on templates or contract instances
      *
      * @param {string} templatePath - path to the template directory or archive
+     * @param {string} contractPath - path to the template directory or archive
      * @param {Object} [options] - an optional set of options
-     * @returns {object} returns true if signature is valid else false
+     * @returns {object} Promise to the code creating an archive
      */
-    static verify(templatePath, options) {
+    static async verify(templatePath, contractPath, options) {
+        if (templatePath) {
+            return Commands.loadTemplate(templatePath, options)
+                .then(async(template) => {
+                    const result = await template.verifyTemplateSignature();
+                    return result;
+                });
+        } else {
+            return Commands.loadInstance(null, contractPath, options)
+                .then((instance) => {
+                    instance.verifySignatures();
+                    Logger.info('All signatures verified successfully');
+                });
+        }
+    }
+
+    /**
+     * Set default params before we create an instance archive
+     *
+     * @param {object} argv the inbound argument values object
+     * @returns {object} a modfied argument object
+     */
+    static validateInstantiateArgs(argv) {
+        argv = Commands.validateCommonArgs(argv);
+
+        if(!argv.target){
+            Logger.info('Using ergo as the default target for the archive.');
+            argv.target = 'ergo';
+        }
+
+        return argv;
+    }
+
+    /**
+     * Create an instance archive from a template
+     *
+     * @param {string} templatePath - path to the template directory or archive
+     * @param {string} dataPath - path to the JSON data
+     * @param {string} target - target language for the archive (should be either 'ergo' or 'es6')
+     * @param {string} outputPath - to the archive file
+     * @param {Object} [options] - an optional set of options
+     * @returns {object} Promise to the code creating an archive
+     */
+    static instantiate(templatePath, dataPath, target, outputPath, options) {
+        const dataJson = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+
         return Commands.loadTemplate(templatePath, options)
-            .then(async(template) => {
-                const result = await template.verifyTemplateSignature();
-                return result;
+            .then(async (template) => {
+                const instance = ContractInstance.fromTemplateWithData(template, dataJson);
+                const archive = await instance.toArchive(target);
+                let file;
+                if (outputPath) {
+                    file = outputPath;
+                }
+                else {
+                    const instanceName = instance.getIdentifier();
+                    file = `${instanceName}.slc`;
+                }
+                Logger.info('Creating archive: ' + file);
+                fs.writeFileSync(file, archive);
+                return true;
             });
     }
 
@@ -738,7 +847,7 @@ class Commands {
     static validateGetArgs(argv) {
         argv = Commands.validateCommonArgs(argv);
         if (!argv.output) {
-            if (Commands.isTemplateArchive(argv.template)) {
+            if (Commands.isArchive(argv.template)) {
                 argv.output = './model';
             } else {
                 argv.output = path.resolve(argv.template,'model');
@@ -764,6 +873,80 @@ class Commands {
                 return `Loaded external models in '${output}'.`;
             });
     }
+
+    /**
+     * Set default params before we export a contract
+     *
+     * @param {object} argv - the inbound argument values object
+     * @returns {object} a modfied argument object
+     */
+    static validateExportArgs(argv) {
+        argv = Commands.validateCommonArgs(argv);
+
+        if(argv.verbose) {
+            Logger.info(`export contract to format ${argv.format}`);
+        }
+
+        return argv;
+    }
+
+    /**
+     * Export a contract to a given format
+     *
+     * @param {string} slcPath - path to the smart legal contract archive
+     * @param {string} outputPath - to the contract file
+     * @param {string} [currentTime] - the definition of 'now', defaults to current time
+     * @param {number} [utcOffset] - UTC Offset for this execution, defaults to local offset
+     * @param {Object} [options] - an optional set of options
+     * @returns {object} Promise to the result of parsing
+     */
+    static async export(slcPath, outputPath, currentTime, utcOffset, options) {
+        return Commands.loadInstance(null, slcPath, null, currentTime, utcOffset, options)
+            .then(async function (instance) {
+                const format = options.format;
+                const result = await Export.toFormat(instance, format, utcOffset, options);
+                const destinationFormat = Export.formatDescriptor(format);
+                if (destinationFormat.fileFormat !== 'binary') {
+                    Logger.info('\n'+result);
+                } else {
+                    Logger.info(`\n<binary ${format} data>`);
+                }
+                if (outputPath) {
+                    Commands.printFormatToFile(result, format, outputPath);
+                }
+                return result;
+            })
+            .catch((err) => {
+                Logger.error(err.message);
+            });
+    }
+
+    /**
+     * Prints a format to string
+     * @param {*} input the input
+     * @param {string} format the format
+     * @returns {string} the string representation
+     */
+    static printFormatToString(input, format) {
+        const fileFormat = Export.formatDescriptor(format).fileFormat;
+        if (fileFormat === 'json') {
+            return JSON.stringify(input);
+        } else {
+            return input;
+        }
+    }
+
+    /**
+     * Prints a format to file
+     * @param {*} input the input
+     * @param {string} format the format
+     * @param {string} filePath the file name
+     */
+    static printFormatToFile(input, format, filePath) {
+        Logger.info('Creating file: ' + filePath);
+        fs.writeFileSync(filePath, Commands.printFormatToString(input,format));
+    }
+
 }
 
 module.exports = Commands;
