@@ -73,7 +73,7 @@
     "@accordproject/concerto-core": "3.8.2",
     "@accordproject/markdown-cicero": "0.16.13",
     "@accordproject/markdown-common": "0.16.13",
-    "@accordproject/markdown-template": "0.16.13",
+    "@accordproject/markdown-template": "0.16.24",
     "axios": "1.7.4",
     "debug": "4.3.4",
     "ietf-language-tag-regex": "0.0.5",
